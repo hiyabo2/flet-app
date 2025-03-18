@@ -163,6 +163,9 @@ class Downloader:
         self.page.theme_mode = ft.ThemeMode.DARK
         self.page.bgcolor = ft.Colors.GREY_900
 
+        platform_info = sys.platform  
+        platform_text = ft.Text(f"Plataforma detectada: {platform_info}", size=12, color=ft.Colors.GREY_400)
+
         # Barra de navegación
         self.page.navigation_bar = ft.NavigationBar(
             destinations=[
@@ -188,6 +191,7 @@ class Downloader:
                     border_radius=12,
                     alignment=ft.alignment.center
                 ),
+                platform_text,
                 ft.Row([
                     self.url_input,
                     ft.IconButton(ft.Icons.DOWNLOAD, on_click=self.queue_download, icon_color=ft.Colors.CYAN_ACCENT)
