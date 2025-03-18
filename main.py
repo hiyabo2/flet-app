@@ -13,9 +13,7 @@ from bs4 import BeautifulSoup
 import json
 from threading import Event
 from requests.exceptions import Timeout
-                                               
-if sys.platform == "android":
-    import android_intent
+from flet_permission_handler import PermissionHandler, PermissionType
 
 file_path= Path.home() / "Download"
 
@@ -23,14 +21,11 @@ headers = {"User-Agent":"Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:109.0) Geck
 
 def get_config_file():
     """Obtiene la ruta del archivo de configuración dependiendo del sistema operativo."""
-    if sys.platform == "android":
-        # 📌 Almacenamiento privado de la aplicación en Android
-        app_dir = Path(os.getenv("HOME", "/data/data/com.tu.app/files"))
-        app_dir.mkdir(parents=True, exist_ok=True)  # 📂 Asegurar que la carpeta exista
-        return app_dir / "downloader_config.json"
-    else:
-        # 📌 Ruta en Windows, Linux y otros sistemas
-        return Path.home() / ".downloader_config.json"
+    # 📌 Almacenamiento privado de la aplicación en Android
+    app = str(get_package_name())
+    app_dir = Path(os.getenv("HOME", f"/data/data/{app}/files"))
+    app_dir.mkdir(parents=True, exist_ok=True)  # 📂 Asegurar que la carpeta exista
+    return app_dir / "downloader_config.json"
     
 def save_download_path(path):
     """Guarda la ruta de descarga en un archivo JSON."""
@@ -56,14 +51,13 @@ def load_download_path():
 
 def get_package_name():
     """Obtiene el nombre del paquete de la aplicación en Android."""
-    if sys.platform == "android":
-        try:
-            package_name = os.popen("cmd appops get --uid").read().strip()
-            if package_name:
-                return package_name
-        except Exception as e:
-            print(f"❌ No se pudo obtener el nombre del paquete: {e}")
-    return None  # Si no está en Android, devuelve None
+    try:
+        package_name = os.popen("cmd appops get --uid").read().strip()
+        if package_name:
+            return package_name
+    except Exception as e:
+        print(f"❌ No se pudo obtener el nombre del paquete: {e}")
+
 
 def make_session(dl):
     session = requests.Session()
@@ -132,6 +126,9 @@ class Downloader:
         self.downloading = False 
         self.max_retries = 5
 
+        self.permission_handler = PermissionHandler()
+        self.page.overlay.append(self.permission_handler)
+
         self.download_path = self.get_default_download_path()
 
         self.current_page = "downloads"  # Página actual
@@ -143,21 +140,8 @@ class Downloader:
         saved_path = load_download_path()
         if saved_path:
             return Path(saved_path)  # 📌 Asegura que sea un objeto Path
-        if sys.platform.startswith("win"):
-            return Path.home() / "Downloads"  # 📂 Windows
-        elif sys.platform.startswith("linux"):
-            try:
-                # 📌 Intentar obtener la ruta con xdg-user-dir (si está disponible)
-                download_path = subprocess.check_output(["xdg-user-dir", "DOWNLOAD"], text=True).strip()
-                if download_path:
-                    return Path(download_path)
-            except Exception:
-                pass  # Si falla, usa la alternativa predeterminada
-            return Path.home() / "Downloads"  # 📂 Fallback en Linux
-        elif sys.platform == "android":
-            return Path("/storage/emulated/0/Download")  # 📂 Android
         else:
-            return Path.home() / "Downloads"  # 📂 Opción predeterminada
+            return Path("/storage/emulated/0/Download")
         
     def setup_ui(self):
         self.page.theme_mode = ft.ThemeMode.DARK
@@ -239,11 +223,17 @@ class Downloader:
             on_click=lambda _: self.open_storage_settings()  # Abre ajustes de almacenamiento
         )
 
+        self.permission_button = ft.ElevatedButton(
+            "📂 Solicitar permiso de almacenamiento",
+            on_click=self.request_storage_permission
+        )
+
         self.config_tab = ft.SafeArea(
             ft.Column([
                 ft.Text("⚙️ Settings", size=20, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
                 self.download_path_container,
-                self.storage_settings_container 
+                self.storage_settings_container,
+                self.permission_button 
             ], alignment=ft.MainAxisAlignment.CENTER)
         )
 
@@ -259,19 +249,28 @@ class Downloader:
             self.page.add(self.config_tab)
         self.page.update()
 
+    def check_storage_permission(self):
+        """Comprueba si el permiso de almacenamiento está concedido."""
+        has_permission = self.permission_handler.check_permission(PermissionType.STORAGE)
+        self.page.add(ft.Text(f"📂 Permiso de almacenamiento: {'Concedido' if has_permission else 'Denegado'}"))
+        self.page.update()
+
+    def request_storage_permission(self, e):
+        """Solicita permiso de almacenamiento en Android."""
+        result = self.permission_handler.request_permission(PermissionType.STORAGE)
+        if result:
+            self.page.add(ft.Text("✅ Permiso de almacenamiento concedido."))
+        else:
+            self.page.add(ft.Text("❌ Permiso de almacenamiento denegado."))
+        self.page.update()
+
     def open_storage_settings(self):
         """Abre la configuración de almacenamiento de la app en Android."""
-        if sys.platform == "android":
-            try:
-                package_name = get_package_name
-                subprocess.run(
-                    ["am", "start", "--user", "0", "-a", "android.settings.APPLICATION_DETAILS_SETTINGS", "-d", f"package:{package_name}"],
-                    check=True
-                )
-            except subprocess.CalledProcessError as ex:
-                self.mostrar_error(f"⚠️ No se pudo abrir la configuración: {ex}")
+        if self.permission_handler.open_app_settings():
+            self.page.add(ft.Text("⚙️ Abriendo configuración de la app..."))
         else:
-            print("⚠️ Esta función solo está disponible en Android.")
+            self.page.add(ft.Text("⚠️ No se pudo abrir la configuración."))
+        self.page.update()
 
     def on_folder_selected(self, e: ft.FilePickerResultEvent):
         """Actualiza la carpeta de descarga si el usuario elige una."""
