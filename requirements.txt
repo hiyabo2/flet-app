@@ -5,3 +5,4 @@ bs4
 pysocks
 asyncio
 hiyabocut==1.0.7
+flet-permission-handler
