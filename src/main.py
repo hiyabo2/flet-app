@@ -134,7 +134,6 @@ class Downloader:
         self.max_retries = 5
 
         self.permission_handler = PermissionHandler()
-        self.page.overlay.append(self.permission_handler)
 
         self.download_path = self.get_default_download_path()
 
@@ -155,6 +154,8 @@ class Downloader:
     def setup_ui(self):
         self.page.theme_mode = ft.ThemeMode.DARK
         self.page.bgcolor = ft.Colors.GREY_900
+
+        self.page.overlay.append(self.permission_handler)
 
         platform_info = sys.platform  
         platform_text = ft.Text(f"Plataforma detectada: {platform_info}", size=12, color=ft.Colors.GREY_400)
@@ -260,13 +261,13 @@ class Downloader:
 
     def check_storage_permission(self):
         """Comprueba si el permiso de almacenamiento está concedido."""
-        has_permission = self.permission_handler.check_permission(ft.PermissionType.STORAGE)
+        has_permission = self.permission_handler.check_permission(PermissionType.STORAGE)
         self.page.add(ft.Text(f"📂 Permiso de almacenamiento: {'Concedido' if has_permission else 'Denegado'}"))
         self.page.update()
 
     def request_storage_permission(self, e):
         """Solicita permiso de almacenamiento en Android."""
-        result = self.permission_handler.request_permission(ft.PermissionType.STORAGE)
+        result = self.permission_handler.request_permission(PermissionType.STORAGE)
         if result:
             self.page.add(ft.Text("✅ Permiso de almacenamiento concedido."))
         else:
@@ -550,4 +551,4 @@ def main(page: ft.Page):
     page.update()
     Downloader(page)
 
-ft.app(target=main)
+ft.app(target=main, view=ft.FLET_APP)
