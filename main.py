@@ -21,11 +21,16 @@ headers = {"User-Agent":"Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:109.0) Geck
 
 def get_config_file():
     """Obtiene la ruta del archivo de configuración dependiendo del sistema operativo."""
-    # 📌 Almacenamiento privado de la aplicación en Android
-    app = str(get_package_name())
-    app_dir = Path(os.getenv("HOME", f"/data/data/{app}/files"))
-    app_dir.mkdir(parents=True, exist_ok=True)  # 📂 Asegurar que la carpeta exista
-    return app_dir / "downloader_config.json"
+    if sys.platform.startswith("win"):
+        # 📌 Ruta en Windows, Linux y otros sistemas
+        return Path.home() / ".downloader_config.json"
+    else:
+        # 📌 Almacenamiento privado de la aplicación en Android
+        app = str(get_package_name())
+        app_dir = Path(os.getenv("HOME", f"/data/data/{app}/files"))
+        app_dir.mkdir(parents=True, exist_ok=True)  # 📂 Asegurar que la carpeta exista
+        return app_dir / "downloader_config.json"
+
     
 def save_download_path(path):
     """Guarda la ruta de descarga en un archivo JSON."""
@@ -51,13 +56,15 @@ def load_download_path():
 
 def get_package_name():
     """Obtiene el nombre del paquete de la aplicación en Android."""
-    try:
-        package_name = os.popen("cmd appops get --uid").read().strip()
-        if package_name:
-            return package_name
-    except Exception as e:
-        print(f"❌ No se pudo obtener el nombre del paquete: {e}")
-
+    if sys.platform.startswith("win"):
+        return None  # Si no está en Android, devuelve None
+    else:
+        try:
+            package_name = os.popen("cmd appops get --uid").read().strip()
+            if package_name:
+                return package_name
+        except Exception as e:
+            print(f"❌ No se pudo obtener el nombre del paquete: {e}")
 
 def make_session(dl):
     session = requests.Session()
@@ -140,6 +147,8 @@ class Downloader:
         saved_path = load_download_path()
         if saved_path:
             return Path(saved_path)  # 📌 Asegura que sea un objeto Path
+        if sys.platform.startswith("win"):
+            return Path.home() / "Downloads"  # 📂 Windows
         else:
             return Path("/storage/emulated/0/Download")
         
@@ -251,13 +260,13 @@ class Downloader:
 
     def check_storage_permission(self):
         """Comprueba si el permiso de almacenamiento está concedido."""
-        has_permission = self.permission_handler.check_permission(PermissionType.STORAGE)
+        has_permission = self.permission_handler.check_permission(ft.PermissionType.STORAGE)
         self.page.add(ft.Text(f"📂 Permiso de almacenamiento: {'Concedido' if has_permission else 'Denegado'}"))
         self.page.update()
 
     def request_storage_permission(self, e):
         """Solicita permiso de almacenamiento en Android."""
-        result = self.permission_handler.request_permission(PermissionType.STORAGE)
+        result = self.permission_handler.request_permission(ft.PermissionType.STORAGE)
         if result:
             self.page.add(ft.Text("✅ Permiso de almacenamiento concedido."))
         else:
