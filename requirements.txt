@@ -1,0 +1,7 @@
+﻿flet==0.26.0
+requests
+yarl
+bs4
+pysocks
+asyncio
+hiyabocut==1.0.7
