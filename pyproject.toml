@@ -8,13 +8,13 @@ authors = [
     { name = "Hiyabo developer", email = "you@example.com" }
 ]
 dependencies = [
-  "flet==0.27.6", "requests", "yarl", "bs4", "flet-permission-handler", "hiyabocut==1.0.7", "asyncio"
+  "flet==0.27.6", "requests", "yarl", "bs4", "hiyabocut==1.0.7", "asyncio"
 ]
 
 [tool.flet]
 # org name in reverse domain name notation, e.g. "com.mycompany".
 # Combined with project.name to build bundle ID for iOS and Android apps
-org = "com.mycompany"
+org = "org.flets"
 
 # project display name that is used as an app title on Android and iOS home screens,
 # shown in window titles and about app dialogs on desktop.
@@ -34,8 +34,7 @@ path = "src"
 "android.permission.READ_EXTERNAL_STORAGE" = true
 "android.permission.WRITE_EXTERNAL_STORAGE" = true
 "android.permission.MANAGE_EXTERNAL_STORAGE" = true
-"android.permission.STORAGE" = true
-"android.permission.BACKGROUND_REFRESH" = true
+"android.permission.QUERY_ALL_PACKAGES" = true
 "android.permission.IGNORE_BATTERY_OPTIMIZATIONS" = true
 "android.permission.INTERNET" = true
 
