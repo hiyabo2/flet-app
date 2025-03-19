@@ -8,7 +8,7 @@ authors = [
     { name = "Hiyabo developer", email = "you@example.com" }
 ]
 dependencies = [
-  "flet==0.27.6", "requests", "yarl", "bs4", "hiyabocut==1.0.7", "asyncio"
+  "flet==0.27.6", "requests", "yarl", "bs4", "hiyabocut==1.0.7", "asyncio", "flet-permission-handler"
 ]
 
 [tool.flet]
@@ -25,7 +25,7 @@ company = "Hiyabo"
 
 # copyright text to display in about app dialogs
 copyright = "Copyright (C) 2025 by Hiyabo"
-flutter.dependencies = ["flet_permission_handler"]
+flutter.dependencies = ["flet-permission-handler"]
 
 [tool.flet.app]
 path = "src"
