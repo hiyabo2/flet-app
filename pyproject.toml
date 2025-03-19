@@ -8,7 +8,7 @@ authors = [
     { name = "Hiyabo developer", email = "you@example.com" }
 ]
 dependencies = [
-  "flet==0.27.6", "requests", "yarl", "bs4", "hiyabocut==1.0.7", "asyncio", "flet-permission-handler"
+  "flet==0.27.6", "requests", "yarl", "bs4", "hiyabocut==1.0.7", "asyncio"
 ]
 
 [tool.flet]
