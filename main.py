@@ -13,7 +13,6 @@ from bs4 import BeautifulSoup
 import json
 from threading import Event
 from requests.exceptions import Timeout
-from flet_permission_handler import PermissionHandler, PermissionType
 
 file_path= Path.home() / "Download"
 
@@ -133,9 +132,6 @@ class Downloader:
         self.downloading = False 
         self.max_retries = 5
 
-        self.permission_handler = PermissionHandler()
-        self.page.overlay.append(self.permission_handler)
-
         self.download_path = self.get_default_download_path()
 
         self.current_page = "downloads"  # Página actual
@@ -220,29 +216,10 @@ class Downloader:
             on_click=lambda _: self.file_picker.get_directory_path()  # Abre el selector de carpetas
         )
 
-        self.storage_settings_container = ft.Container(
-            content=ft.Column([
-                ft.Text("⚙️ Ajustes de almacenamiento", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                ft.Text("Abrir configuración del almacenamiento del sistema", size=14, color=ft.Colors.GREY_400),
-            ], spacing=5),
-            padding=15,
-            bgcolor=ft.Colors.GREY_900,
-            border_radius=10,
-            ink=True,
-            on_click=lambda _: self.open_storage_settings()  # Abre ajustes de almacenamiento
-        )
-
-        self.permission_button = ft.ElevatedButton(
-            "📂 Solicitar permiso de almacenamiento",
-            on_click=self.request_storage_permission
-        )
-
         self.config_tab = ft.SafeArea(
             ft.Column([
                 ft.Text("⚙️ Settings", size=20, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
                 self.download_path_container,
-                self.storage_settings_container,
-                self.permission_button 
             ], alignment=ft.MainAxisAlignment.CENTER)
         )
 
@@ -256,29 +233,6 @@ class Downloader:
             self.page.add(self.download_tab)
         else:
             self.page.add(self.config_tab)
-        self.page.update()
-
-    def check_storage_permission(self):
-        """Comprueba si el permiso de almacenamiento está concedido."""
-        has_permission = self.permission_handler.check_permission(ft.PermissionType.STORAGE)
-        self.page.add(ft.Text(f"📂 Permiso de almacenamiento: {'Concedido' if has_permission else 'Denegado'}"))
-        self.page.update()
-
-    def request_storage_permission(self, e):
-        """Solicita permiso de almacenamiento en Android."""
-        result = self.permission_handler.request_permission(ft.PermissionType.STORAGE)
-        if result:
-            self.page.add(ft.Text("✅ Permiso de almacenamiento concedido."))
-        else:
-            self.page.add(ft.Text("❌ Permiso de almacenamiento denegado."))
-        self.page.update()
-
-    def open_storage_settings(self):
-        """Abre la configuración de almacenamiento de la app en Android."""
-        if self.permission_handler.open_app_settings():
-            self.page.add(ft.Text("⚙️ Abriendo configuración de la app..."))
-        else:
-            self.page.add(ft.Text("⚠️ No se pudo abrir la configuración."))
         self.page.update()
 
     def on_folder_selected(self, e: ft.FilePickerResultEvent):
