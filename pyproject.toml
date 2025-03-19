@@ -25,7 +25,7 @@ company = "Hiyabo"
 
 # copyright text to display in about app dialogs
 copyright = "Copyright (C) 2025 by Hiyabo"
-flutter.dependencies = ["flet-permission-handler"]
+flutter.dependencies = ["flet_permission_handler"]
 
 [tool.flet.app]
 path = "src"
