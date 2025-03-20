@@ -1,50 +1,39 @@
 [project]
+
 name = "Down Free"
 version = "1.0.0"
-description = ""
-readme = "README.md"
-requires-python = ">=3.9"
+description = "App para la descarga de archivos"
 authors = [
-    { name = "Hiyabo developer", email = "you@example.com" }
+  {name = "Hiyabo", email = "KeimaSenpai@proton.me"}
 ]
-dependencies = [
-  "flet==0.26.0", "requests", "yarl", "bs4", "hiyabocut==1.0.7", "asyncio", "flet-permission-handler"
-]
+dependencies = ["flet==0.26.0", "requests", "yarl", "bs4", "pysocks", "hiyabocut==1.0.7", "asyncio"]
+
 
 [tool.flet]
-# org name in reverse domain name notation, e.g. "com.mycompany".
-# Combined with project.name to build bundle ID for iOS and Android apps
-org = "org.flets"
-
-# project display name that is used as an app title on Android and iOS home screens,
-# shown in window titles and about app dialogs on desktop.
-product = "downfree"
-
-# company name to display in about app dialogs
-company = "Hiyabo"
-
-# copyright text to display in about app dialogs
-copyright = "Copyright (C) 2025 by Hiyabo"
+org = "by.bytebloom" # --org
+product = "Down Free" # --product
+company = "ByteBloom" # --company
+copyright = "Copyright (C) 2025 by ByteBloom" # --copyright
+build_number = 2 # --build-number
 flutter.dependencies = ["flet_permission_handler"]
-
-[tool.flet.app]
-path = "src"
+icon = "icon.png"
 
 [tool.flet.android.permission] # --android-permissions
 "android.permission.READ_EXTERNAL_STORAGE" = true
 "android.permission.WRITE_EXTERNAL_STORAGE" = true
 "android.permission.MANAGE_EXTERNAL_STORAGE" = true
-"android.permission.QUERY_ALL_PACKAGES" = true
+"android.permission.STORAGE" = true
+"android.permission.BACKGROUND_REFRESH" = true
 "android.permission.IGNORE_BATTERY_OPTIMIZATIONS" = true
 "android.permission.INTERNET" = true
 
-[tool.uv]
-dev-dependencies = [
-    "flet[all]==0.26.0",
-]
+[tool.flet.ios.info] # --info-plist
+NSLocationWhenInUseUsageDescription = "This app uses location service when in use."
 
-[tool.poetry]
-package-mode = false
-
-[tool.poetry.group.dev.dependencies]
-flet = {extras = ["all"], version = "0.26.0"}
+[tool.flet.android.signing]
+# store and key passwords can be passed with `--android-signing-key-store-password`
+# and `--android-signing-key-password` options or
+# FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD
+# and FLET_ANDROID_SIGNING_KEY_PASSWORD environment variables.
+key_store = "build/bytebloom.jks" # --android-signing-key-store
+key_alias = "upload"
