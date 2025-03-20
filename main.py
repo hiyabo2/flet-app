@@ -4,8 +4,6 @@ import os
 import sys
 import asyncio
 import ast
-import subprocess
-from time import sleep
 from pathlib import Path
 from hiyabocut import unshort
 import base64
@@ -50,18 +48,6 @@ def load_download_path():
         except Exception as e:
             print(f"Error al cargar la configuración: {e}")
     return None  # Si no hay configuración, devolver None
-
-def get_package_name():
-    """Obtiene el nombre del paquete de la aplicación en Android."""
-    if sys.platform.startswith("win"):
-        return None  # Si no está en Android, devuelve None
-    else:
-        try:
-            package_name = os.popen("cmd appops get --uid").read().strip()
-            if package_name:
-                return package_name
-        except Exception as e:
-            print(f"❌ No se pudo obtener el nombre del paquete: {e}")
 
 def make_session(dl):
     session = requests.Session()
@@ -222,15 +208,24 @@ class Downloader:
             on_click=lambda _: self.open_storage_settings()  # Abre ajustes de almacenamiento
         )
 
+        self.permission_button = ft.ElevatedButton(
+            "📂 Solicitar permiso de almacenamiento",
+            data=ft.PermissionType.STORAGE,
+            on_click=self.request_permission
+        )
+
         self.config_tab = ft.SafeArea(
             ft.Column([
                 ft.Text("⚙️ Settings", size=20, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
                 self.download_path_container,
-                self.storage_settings_container 
+                self.storage_settings_container,
+                self.permission_button
             ], alignment=ft.MainAxisAlignment.CENTER)
         )
 
         self.page.add(self.download_tab)  # Iniciar con la pestaña de descargas
+        self.ph = ft.PermissionHandler()
+        self.page.overlay.append(self.ph)
         self.page.update()
 
     def change_page(self, e):
@@ -242,20 +237,24 @@ class Downloader:
             self.page.add(self.config_tab)
         self.page.update()
 
+    def check_permission(self, e):
+        o = self.ph.check_permission(e.control.data)
+        self.page.add(ft.Text(f"Checked {e.control.data.name}: {o}"))
+
+    def request_permission(self, e):
+        try:
+            o = self.ph.request_permission(e.control.data)
+            self.page.add(ft.Text(f"Permisos Concedidos Correctamente"))
+        except Exception as ex:
+            self.page.add(ft.Text(f"Error al obtener Permisos: {ex}"))
+
     def open_storage_settings(self):
         """Abre la configuración de almacenamiento de la app en Android."""
-        if sys.platform.startswith("win"):
-            print("⚠️ Esta función solo está disponible en Android.")
+        if self.ph.open_app_settings():
+            self.page.add(ft.Text("⚙️ Abriendo configuración de la app..."))
         else:
-            try:
-                package_name = get_package_name
-                subprocess.run(
-                    ["am", "start", "--user", "0", "-a", "android.settings.APPLICATION_DETAILS_SETTINGS", "-d", f"package:{package_name}"],
-                    check=True
-                )
-            except subprocess.CalledProcessError as ex:
-                self.mostrar_error(f"⚠️ No se pudo abrir la configuración: {ex}")
-
+            self.page.add(ft.Text("⚠️ No se pudo abrir la configuración."))
+        self.page.update()
 
     def on_folder_selected(self, e: ft.FilePickerResultEvent):
         """Actualiza la carpeta de descarga si el usuario elige una."""
@@ -517,6 +516,7 @@ class Downloader:
         return f"{num:.2f} Yi{suffix}"
     
 def main(page: ft.Page):
+    page.adaptive = True
     page.on_close = lambda _: sys.exit(0)  # Cierra la app correctamente
     page.title = "Down Free"
     page.scroll = "adaptive"
