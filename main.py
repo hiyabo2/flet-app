@@ -23,7 +23,7 @@ def get_config_file():
         return Path.home() / ".downloader_config.json"
     else:
         # 📌 Almacenamiento privado de la aplicación en Android
-        app_dir = Path("/storage/emulated/0/Download")
+        app_dir = Path("/storage/emulated/0")
         app_dir.mkdir(parents=True, exist_ok=True)  # 📂 Asegurar que la carpeta exista
         return app_dir / "downloader_config.json"
     
@@ -198,28 +198,36 @@ class Downloader:
 
         self.storage_settings_container = ft.Container(
             content=ft.Column([
-                ft.Text("⚙️ Ajustes de almacenamiento", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                ft.Text("Abrir configuración del almacenamiento del sistema", size=14, color=ft.Colors.GREY_400),
+                ft.Text("⚙️ Permisos de Almacenamiento", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                ft.Text("Para que la app pueda descargar correctamente debe conceder permisos de Almacenamiento", size=14, color=ft.Colors.GREY_400),
             ], spacing=5),
             padding=15,
             bgcolor=ft.Colors.GREY_900,
             border_radius=10,
             ink=True,
-            on_click=lambda _: self.open_storage_settings()  # Abre ajustes de almacenamiento
+            data=ft.PermissionType.MANAGE_EXTERNAL_STORAGE,
+            on_click=self.request_permission
         )
 
-        self.permission_button = ft.ElevatedButton(
-            "📂 Solicitar permiso de almacenamiento",
-            data=ft.PermissionType.STORAGE,
+        self.ignore_battery_optimizations = ft.Container(
+            content=ft.Column([
+                ft.Text("⚙️ Excluir de Optimizacion de Bateria", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                ft.Text("Para un correcto funcionamiento, por favor ignore la optimizacion de bateria para esta app", size=14, color=ft.Colors.GREY_400),
+            ], spacing=5),
+            padding=15,
+            bgcolor=ft.Colors.GREY_900,
+            border_radius=10,
+            ink=True,
+            data=ft.PermissionType.IGNORE_BATTERY_OPTIMIZATIONS,
             on_click=self.request_permission
         )
 
         self.config_tab = ft.SafeArea(
             ft.Column([
                 ft.Text("⚙️ Settings", size=20, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
-                self.download_path_container,
                 self.storage_settings_container,
-                self.permission_button
+                self.ignore_battery_optimizations,
+                self.download_path_container
             ], alignment=ft.MainAxisAlignment.CENTER)
         )
 
