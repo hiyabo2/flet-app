@@ -3,9 +3,8 @@ import requests
 import os
 import sys
 import asyncio
-import ast
 import subprocess
-from time import sleep
+import ast
 from pathlib import Path
 from hiyabocut import unshort
 import base64
@@ -13,11 +12,12 @@ from bs4 import BeautifulSoup
 import json
 from threading import Event
 from requests.exceptions import Timeout
-from flet_permission_handler import PermissionHandler, PermissionType
 
 file_path= Path.home() / "Download"
 
 headers = {"User-Agent":"Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0"}
+
+filename_counters = {}
 
 def get_config_file():
     """Obtiene la ruta del archivo de configuración dependiendo del sistema operativo."""
@@ -26,11 +26,9 @@ def get_config_file():
         return Path.home() / ".downloader_config.json"
     else:
         # 📌 Almacenamiento privado de la aplicación en Android
-        app = str(get_package_name())
-        app_dir = Path(os.getenv("HOME", f"/data/data/{app}/files"))
+        app_dir = Path("/storage/emulated/0")
         app_dir.mkdir(parents=True, exist_ok=True)  # 📂 Asegurar que la carpeta exista
         return app_dir / "downloader_config.json"
-
     
 def save_download_path(path):
     """Guarda la ruta de descarga en un archivo JSON."""
@@ -54,17 +52,14 @@ def load_download_path():
             print(f"Error al cargar la configuración: {e}")
     return None  # Si no hay configuración, devolver None
 
-def get_package_name():
-    """Obtiene el nombre del paquete de la aplicación en Android."""
-    if sys.platform.startswith("win"):
-        return None  # Si no está en Android, devuelve None
+def open_download_folder():
+    saved_path = load_download_path()
+    if saved_path:
+        download_dir = saved_path
     else:
-        try:
-            package_name = os.popen("cmd appops get --uid").read().strip()
-            if package_name:
-                return package_name
-        except Exception as e:
-            print(f"❌ No se pudo obtener el nombre del paquete: {e}")
+        download_dir = Path.home() / "Downloads"
+    download_folder = os.path.abspath(download_dir)
+    subprocess.Popen(['explorer', download_folder])
 
 def make_session(dl):
     session = requests.Session()
@@ -126,6 +121,8 @@ def make_session(dl):
 class Downloader:
     def __init__(self, page: ft.Page):
         self.page = page
+        self.running = True
+        self.page.run_task(self.keep_alive)
         self.connection_lost_event = Event() 
         self.download_queue = asyncio.Queue()
         self.pause_event = Event()
@@ -133,11 +130,10 @@ class Downloader:
         self.downloading = False 
         self.max_retries = 5
 
-        self.permission_handler = PermissionHandler()
-
         self.download_path = self.get_default_download_path()
-
         self.current_page = "downloads"  # Página actual
+
+        self.download_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
         self.setup_ui()
         self.page.run_task(self.start_download)
 
@@ -153,12 +149,7 @@ class Downloader:
         
     def setup_ui(self):
         self.page.theme_mode = ft.ThemeMode.DARK
-        self.page.bgcolor = ft.Colors.GREY_900
-
-        self.page.overlay.append(self.permission_handler)
-
-        platform_info = sys.platform  
-        platform_text = ft.Text(f"Plataforma detectada: {platform_info}", size=12, color=ft.Colors.GREY_400)
+        self.page.bgcolor = ft.Colors.BLACK
 
         # Barra de navegación
         self.page.navigation_bar = ft.NavigationBar(
@@ -170,8 +161,22 @@ class Downloader:
         )
 
         # Contenido de Descargas
-        self.status_label = ft.Text("Estado de descarga", size=14, text_align=ft.TextAlign.CENTER)
-        self.url_input = ft.TextField(hint_text="Introduce la URL", expand=True, bgcolor=ft.Colors.GREY, border_radius=10)
+        self.status_label = ft.Text("Estado de descarga", size=14, text_align=ft.TextAlign.CENTER, color=ft.Colors.GREY_300)
+        self.url_input = ft.TextField(
+            hint_text="Introduce la URL", 
+            expand=True, 
+            bgcolor=ft.Colors.GREY_900,
+            border_radius=12,
+            prefix_icon=ft.Icons.LINK,
+        )
+        self.download_button = ft.IconButton(
+            icon=ft.Icons.DOWNLOAD,
+            icon_color=ft.Colors.CYAN_ACCENT,
+            tooltip="Iniciar descarga",
+            on_click=self.queue_download,
+            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10), bgcolor=ft.Colors.GREY_800)
+        )
+
         self.progress_bar = ft.ProgressBar(value=0, width=200, bgcolor=ft.Colors.GREY)
         self.progress_text = ft.Text("0 MB / 0 MB (0.0%)", size=12, color=ft.Colors.WHITE)
         self.download_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
@@ -179,29 +184,19 @@ class Downloader:
         self.download_tab = ft.SafeArea(
             ft.Column([
                 ft.Container(
-                    content=ft.Text("📥 Down Free", size=20, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, color=ft.Colors.CYAN_ACCENT),
-                    bgcolor=ft.Colors.BLUE_GREY,
+                    content=ft.Text("📥 Down Free", size=22, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, color=ft.Colors.CYAN_ACCENT),
+                    bgcolor=ft.Colors.GREY_800,
                     padding=15,
                     border_radius=12,
                     alignment=ft.alignment.center
                 ),
-                platform_text,
-                ft.Row([
-                    self.url_input,
-                    ft.IconButton(ft.Icons.DOWNLOAD, on_click=self.queue_download, icon_color=ft.Colors.CYAN_ACCENT)
-                ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
-                ft.Container(
-                    content=ft.Column([
-                        self.progress_bar,
-                        self.progress_text
-                    ], alignment=ft.MainAxisAlignment.CENTER),
-                    padding=10,
-                    border_radius=10,
-                    bgcolor=ft.Colors.GREY
-                ),
-                self.status_label,
-                ft.Container(content=self.download_list, expand=True)
-            ], spacing=15, expand=True, alignment=ft.MainAxisAlignment.CENTER)
+                    ft.Row([self.url_input, self.download_button], spacing=10),
+                    self.status_label,
+                    ft.Container(content=self.download_list, padding=10, bgcolor=ft.Colors.GREY_900, border_radius=12, expand=True)
+                ],
+                spacing=15,
+                expand=True
+            )
         )
 
         # Contenido de Configuración
@@ -223,31 +218,42 @@ class Downloader:
 
         self.storage_settings_container = ft.Container(
             content=ft.Column([
-                ft.Text("⚙️ Ajustes de almacenamiento", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                ft.Text("Abrir configuración del almacenamiento del sistema", size=14, color=ft.Colors.GREY_400),
+                ft.Text("⚙️ Permisos de Almacenamiento", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                ft.Text("Para que la app pueda descargar correctamente debe conceder permisos de Almacenamiento", size=14, color=ft.Colors.GREY_400),
             ], spacing=5),
             padding=15,
             bgcolor=ft.Colors.GREY_900,
             border_radius=10,
             ink=True,
-            on_click=lambda _: self.open_storage_settings()  # Abre ajustes de almacenamiento
+            data=ft.PermissionType.MANAGE_EXTERNAL_STORAGE,
+            on_click=self.request_permission
         )
 
-        self.permission_button = ft.ElevatedButton(
-            "📂 Solicitar permiso de almacenamiento",
-            on_click=self.request_storage_permission
+        self.ignore_battery_optimizations = ft.Container(
+            content=ft.Column([
+                ft.Text("⚙️ Excluir de Optimizacion de Bateria", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                ft.Text("Para un correcto funcionamiento, por favor ignore la optimizacion de bateria para esta app", size=14, color=ft.Colors.GREY_400),
+            ], spacing=5),
+            padding=15,
+            bgcolor=ft.Colors.GREY_900,
+            border_radius=10,
+            ink=True,
+            data=ft.PermissionType.IGNORE_BATTERY_OPTIMIZATIONS,
+            on_click=self.request_permission
         )
 
         self.config_tab = ft.SafeArea(
             ft.Column([
                 ft.Text("⚙️ Settings", size=20, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
-                self.download_path_container,
                 self.storage_settings_container,
-                self.permission_button 
+                self.ignore_battery_optimizations,
+                self.download_path_container
             ], alignment=ft.MainAxisAlignment.CENTER)
         )
 
         self.page.add(self.download_tab)  # Iniciar con la pestaña de descargas
+        self.ph = ft.PermissionHandler()
+        self.page.overlay.append(self.ph)
         self.page.update()
 
     def change_page(self, e):
@@ -259,24 +265,20 @@ class Downloader:
             self.page.add(self.config_tab)
         self.page.update()
 
-    def check_storage_permission(self):
-        """Comprueba si el permiso de almacenamiento está concedido."""
-        has_permission = self.permission_handler.check_permission(PermissionType.STORAGE)
-        self.page.add(ft.Text(f"📂 Permiso de almacenamiento: {'Concedido' if has_permission else 'Denegado'}"))
-        self.page.update()
+    def check_permission(self, e):
+        o = self.ph.check_permission(e.control.data)
+        self.page.add(ft.Text(f"Checked {e.control.data.name}: {o}"))
 
-    def request_storage_permission(self, e):
-        """Solicita permiso de almacenamiento en Android."""
-        result = self.permission_handler.request_permission(PermissionType.STORAGE)
-        if result:
-            self.page.add(ft.Text("✅ Permiso de almacenamiento concedido."))
-        else:
-            self.page.add(ft.Text("❌ Permiso de almacenamiento denegado."))
-        self.page.update()
+    def request_permission(self, e):
+        try:
+            o = self.ph.request_permission(e.control.data)
+            self.page.add(ft.Text(f"Permisos Concedidos Correctamente"))
+        except Exception as ex:
+            self.page.add(ft.Text(f"Error al obtener Permisos: {ex}"))
 
     def open_storage_settings(self):
         """Abre la configuración de almacenamiento de la app en Android."""
-        if self.permission_handler.open_app_settings():
+        if self.ph.open_app_settings():
             self.page.add(ft.Text("⚙️ Abriendo configuración de la app..."))
         else:
             self.page.add(ft.Text("⚠️ No se pudo abrir la configuración."))
@@ -296,50 +298,111 @@ class Downloader:
         self.page.open(ft.SnackBar(ft.Text(mensaje)))
         self.page.update()
 
+
+    def get_unique_filename(self, filename: str) -> str:
+        """Genera un nombre único basado en un contador interno sin revisar archivos existentes."""
+        base, ext = os.path.splitext(filename)  # Separar nombre y extensión
+        # Si el archivo ya tiene un contador, amentarlo
+        if filename in filename_counters:
+            filename_counters[filename] += 1
+        else:
+            filename_counters[filename] = 1
+        # Si es la primera vez, usar el nombre original
+        if filename_counters[filename] == 1:
+            return filename
+        # Generar un nombre con el contador
+        return f"{base} ({filename_counters[filename]}){ext}"
+
     async def queue_download(self, e):
+        """Añadir una descarga a la cola usando `ast.literal_eval`."""
         url_text = self.url_input.value.strip()
         if not url_text:
             self.mostrar_error("❌ Introduce una URL válida.")
             return
         try:
-            url = ast.literal_eval(url_text)  # 🔹 Convierte la cadena a un diccionario
-            file_status = self.add_download(url["fn"])   # 📌 Agregar nombre del archivo a la lista UI
-            url["status_text"] = file_status 
-            await self.download_queue.put(url) 
-            self.url_input.value = ""  # Limpiar campo
+            # 🔹 Convertir la cadena a un diccionario con `ast.literal_eval`
+            url_data = ast.literal_eval(url_text)
+            # 📂 Extraer nombre del archivo
+            filename = self.get_unique_filename(url_data.get("fn", "archivo_descarga.unknown"))
+            # 📜 Crear información de descarga
+            download_info = {
+                "fn": filename,
+                "url": url_data,  # Guardar el diccionario original
+                "status": "Pendiente"  # Para actualizar el estado en la UI
+            }
+            self.add_download_card(download_info)
+            await self.download_queue.put(download_info)  # Agregar a la cola
+            self.url_input.value = ""  # Limpiar el campo de entrada
             self.page.update()
         except Exception as ex:
-            if "invalid syntax" in str(ex):
-                self.mostrar_error(f"❌ URL Invalida")
-            else:
-                self.mostrar_error(f"❌ Error en la URL: {str(ex)}")
+            print(f"❌ Error en la URL: {str(ex)}")
 
     async def start_download(self):
+        """📥 Procesa las descargas en la cola, actualizando la UI en tiempo real."""
         while True:
             if not self.downloading and not self.download_queue.empty():
-                self.downloading = True 
-                dl = await self.download_queue.get()  # 🔹 Esperar una nueva descarga
-                filet = dl['fn']
-                if len(filet) > 25:
-                    filet = filet[:20] + "." + filet[-5:]
-                if "status_text" in dl:
-                    dl["status_text"].value = f"📂 {filet} - Descargando..."
-                    dl["status_text"].update()  # 🔹 Forzar actualización
-                    self.page.update()
+                self.downloading = True  # Marcar como en descarga
+                dl = await self.download_queue.get()
+                filename = dl["fn"]
+                if len(filename) > 25:
+                    filename = filename[:20] + "." + filename[-5:]
+                # 🔹 Buscar la tarjeta de descarga
+                for card in self.download_list.controls:
+                    if isinstance(card, ft.Container):
+                        row = card.content
+                        if isinstance(row, ft.Row) and row.controls[1].controls[0].value == filename:
+                            status_text = row.controls[1].controls[1]  # Estado de descarga
+                            progress_ring = row.controls[2]  # Barra de progreso
+                            # 📂 Actualizar estado en la UI
+                            status_text.value = "📥 Iniciando..."
+                            self.page.update()
+                            # 🔄 Iniciar la descarga real
+                            await self._download_file(dl["url"], status_text, progress_ring)
+                            status_text.value = "✅ Completado"  
+                            progress_ring.value = 1.0 
+                            self.page.update()
+                            break
+                self.download_queue.task_done()
+                self.downloading = False
                 self.page.update()
-                await self._download_file(dl)  # 🔹 Descargar el archivo
-                self.download_queue.task_done()  # 🔹 Marcar como completada
-                self.downloading = False 
-                self.page.update()
-            await asyncio.sleep(1)   
+            await asyncio.sleep(1)
 
-    async def _download_file(self, dl, ichunk=0, index=0):
+    def add_download_card(self, dl):
+        """📜 Agregar una tarjeta visual para la descarga con progreso dinámico."""
+        filename = dl["fn"]
+        if len(filename) > 25:
+            filename = filename[:20] + "." + filename[-5:]
+        status_text = ft.Text("⏳ Pendiente...", size=12, color=ft.Colors.GREY_400)
+        progress_ring = ft.ProgressRing(value=0, width=24, height=24, color=ft.Colors.CYAN_ACCENT)
+
+        card = ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.FILE_DOWNLOAD, color=ft.Colors.CYAN_ACCENT),
+                ft.Column([
+                    ft.Text(filename, size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                    status_text  # Estado dinámico
+                ], spacing=2),
+                progress_ring  # Barra de progreso circular
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            padding=10,
+            bgcolor=ft.Colors.GREY_800,
+            border_radius=10
+        )
+        self.download_list.controls.append(card)
+        self.page.update()
+        return status_text, progress_ring
+
+    async def _download_file(self, dl, status_text, progress_ring, ichunk=0, index=0):
         try:
             filename = dl['fn']
             self.status_label.value = f"📥 Descargando..."
             self.page.update()
             total_size = dl['fs']
+            total_mb = self.sizeof_fmt(total_size) 
             total_parts = dl["t"] * 1024 * 1024
+
+            self.status_label.value = f"📥 Descargando..."
+            self.page.update()
 
             if dl["m"] in ["m", "ts", "md", "rev2"]:
                 dl['urls'] = eval(unshort(dl["urls"]))
@@ -347,6 +410,8 @@ class Downloader:
             total_url = len(dl["urls"])
             session = make_session(dl)
             chunk_por = index
+            downloaded_size = 0
+
             filet = dl['fn']
             if len(filet) > 25:
                 filet = filename[:20] + "." + filename[-5:]
@@ -374,15 +439,15 @@ class Downloader:
                         with open(part_path, "wb") as part_file:
                             resp = session.get(chunkurl, headers=headers, stream=True, verify=False)
                             resp.raise_for_status()
-                            downloaded = 0
                             for chunk in resp.iter_content(chunk_size=8192):
-                                downloaded += len(chunk)
-                                chunk_por = sum(
-                                    os.path.getsize(f"{download_path}.part{j}") for j in range(i)
-                                ) + downloaded 
-                                progress = chunk_por / total_size          
+                                downloaded_size = sum(os.path.getsize(part) for part in part_files if os.path.exists(part))
                                 part_file.write(chunk)
-                                self.update_download(filename, progress, chunk_por, total_size)
+                                downloaded_mb = self.sizeof_fmt(downloaded_size)
+                                progress_percent = (downloaded_size / total_size)
+                                progress_ring.value = progress_percent
+                                status_text.value = f"📥 {downloaded_mb} / {total_mb} ({progress_percent * 100:.2f}%)"
+                                self.page.update()
+
                                 await asyncio.sleep(0)
 
                         expected_size = total_parts if (i < total_url - 1) else total_size % total_parts
@@ -417,7 +482,11 @@ class Downloader:
 
             self._replace_bytes_if_needed(dl, download_path)
 
-            self.complete_download(filet)
+            #self.complete_download(filet)
+            if sys.platform.startswith("win"):
+                if self.download_queue.empty():
+                    open_download_folder()
+
         except Exception as ex:
             print(f"¡Error! {str(ex)}")
             self.mostrar_error("Error de conexión: No se pudo conectar al servidor.")
@@ -541,14 +610,20 @@ class Downloader:
             num /= 1024.0
         return f"{num:.2f} Yi{suffix}"
     
+    async def keep_alive(self):
+        """Mantiene la app en segundo plano."""
+        while True:
+            print("🔄 Manteniendo viva la app...")
+            await asyncio.sleep(1) 
+
 def main(page: ft.Page):
-    page.on_close = lambda _: sys.exit(0)  # Cierra la app correctamente
+    page.adaptive = True
     page.title = "Down Free"
     page.scroll = "adaptive"
     page.window.width = 400 # Ajusta el ancho de la ventana
     page.window.height = 700 # Ajusta la altura de la ventana
     page.window.resizable = False  # Permite redimensionar la ventana
     page.update()
-    Downloader(page)
+    downloader = Downloader(page)
 
-ft.app(target=main, view=ft.FLET_APP)
+ft.app(main)
