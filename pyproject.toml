@@ -30,6 +30,9 @@ icon = "icon.png"
 [tool.flet.ios.info] # --info-plist
 NSLocationWhenInUseUsageDescription = "This app uses location service when in use."
 
+[tool.flet.app]
+path = "src"
+
 [tool.flet.android.signing]
 # store and key passwords can be passed with `--android-signing-key-store-password`
 # and `--android-signing-key-password` options or
