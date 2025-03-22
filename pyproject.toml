@@ -25,7 +25,10 @@ icon = "icon.png"
 "android.permission.STORAGE" = true
 "android.permission.BACKGROUND_REFRESH" = true
 "android.permission.IGNORE_BATTERY_OPTIMIZATIONS" = true
+"android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" = true
 "android.permission.INTERNET" = true
+"android.permission.WAKE_LOCK" = true
+"android.permission.FOREGROUND_SERVICE" = true
 
 [tool.flet.ios.info] # --info-plist
 NSLocationWhenInUseUsageDescription = "This app uses location service when in use."
