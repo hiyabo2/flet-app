@@ -12,8 +12,6 @@ from bs4 import BeautifulSoup
 import json
 from threading import Event
 
-import android
-
 
 file_path= Path.home() / "Download"
 
@@ -129,17 +127,15 @@ class Downloader:
         self.page = page
         self.connection_lost_event = Event() 
         self.download_queue = asyncio.Queue()
-        self.downloading = False 
         self.max_retries = 5
                                            
         self.download_path = self.get_default_download_path()
         self.current_page = "downloads"  # Página actual
         self.download_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
 
-        self.wake_lock = None
         self.setup_ui()
 
-        self.page.run_task(self.keep_alive)
+        #self.page.run_task(self.keep_alive)
         self.page.run_task(self.start_download)
 
     def get_default_download_path(self):
@@ -342,8 +338,7 @@ class Downloader:
     async def start_download(self):
         """📥 Procesa las descargas en la cola, respetando la concurrencia."""
         while True:
-            if not self.downloading and not self.download_queue.empty():
-                self.acquire_wake_lock() 
+            if not self.download_queue.empty() and not getattr(self, "downloading", False):
                 self.downloading = True
                 dl = await self.download_queue.get()
                 filename = dl["fn"]
@@ -355,11 +350,11 @@ class Downloader:
                     status_text.value = "📥 Iniciando..."
                     self.page.update()
 
-                    await self._download_file(dl["url"], status_text, progress_ring)
+                    #await self._download_file(dl["url"], status_text, progress_ring)
+                    self.page.run_task(self._download_file, dl["url"], status_text, progress_ring)
 
                 self.download_queue.task_done()
-                self.downloading = False
-                self.release_wake_lock()
+            print("Prueba descarga")
             await asyncio.sleep(1) 
 
     def add_download_card(self, dl):
@@ -376,13 +371,14 @@ class Downloader:
                 ft.Column([
                     ft.Text(filename, size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE), status_text  # Estado dinámico
                 ], spacing=2),
-                progress_ring  # Barra de progreso circular
+                progress_ring,  # Barra de progreso circular
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             padding=10, bgcolor=ft.Colors.GREY_800, border_radius=10
         )
         self.download_list.controls.append(card)
         self.page.update()
         return status_text, progress_ring
+
 
     def find_download_card(self, filename):
         """🔍 Busca la tarjeta de descarga por nombre."""
@@ -500,6 +496,8 @@ class Downloader:
         except Exception as ex:
             print(f"¡Error! {str(ex)}")
             self.mostrar_error("Error de conexión: No se pudo conectar al servidor.")
+        finally:
+            self.downloading = False
 
     async def _retry_connection(self):
         """Reintenta la conexión hasta 5 veces antes de rendirse."""
@@ -591,17 +589,6 @@ class Downloader:
                 return f"{num:.2f} {unit}{suffix}"  # Espacio entre número y unidad
             num /= 1024.0
         return f"{num:.2f} Yi{suffix}"
-    
-    def acquire_wake_lock(self):
-        """Mantiene la app activa en segundo plano en Android."""
-        power_manager = android.get_system_service(android.POWER_SERVICE)
-        self.wake_lock = power_manager.newWakeLock(android.WAKE_LOCK_PARTIAL, "Downloader::Lock")
-        self.wake_lock.acquire()
-
-    def release_wake_lock(self):
-        """Libera el WakeLock cuando la descarga finaliza."""
-        if self.wake_lock and self.wake_lock.isHeld():
-            self.wake_lock.release()
 
     async def keep_alive(self):
         """Mantiene la app en segundo plano."""
