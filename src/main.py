@@ -457,12 +457,6 @@ class Downloader:
                                             update_interval = 1.0  # Máximo 1s
                                     await asyncio.sleep(0)
 
-                        status_text.value = "✅ Completado"  
-                        progress_ring.value = 1.0  
-                        self.page.update()
-
-                        await session.close()  
-
                         expected_size = total_parts if (i < total_url - 1) else total_size % total_parts
                         if os.path.getsize(part_path) < expected_size:
                             print(f"Error: La parte {i} se descargó con tamaño 0 bytes.")
@@ -486,6 +480,11 @@ class Downloader:
                 if retries >= self.max_retries:
                     self.mostrar_error(f"No se pudo completar la parte {i + 1} tras múltiples intentos.")
                     return
+                
+            status_text.value = "✅ Completado"  
+            progress_ring.value = 1.0  
+            self.page.update()
+            await session.close()  
 
             downloaded_parts = [os.path.exists(part) and os.path.getsize(part) > 0 for part in part_files]
             if all(downloaded_parts) and len(downloaded_parts) == total_url:
