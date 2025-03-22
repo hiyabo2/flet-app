@@ -1,5 +1,5 @@
 import flet as ft
-import requests
+import aiohttp
 import os
 import sys
 import asyncio
@@ -11,7 +11,6 @@ import base64
 from bs4 import BeautifulSoup
 import json
 from threading import Event
-from requests.exceptions import Timeout
 
 file_path= Path.home() / "Download"
 
@@ -61,8 +60,8 @@ def open_download_folder():
     download_folder = os.path.abspath(download_dir)
     subprocess.Popen(['explorer', download_folder])
 
-def make_session(dl):
-    session = requests.Session()
+async def make_session(dl):
+    session = aiohttp.ClientSession()
     username = dl['u']
     password = dl['p']
     if dl['m'] == 'm':
@@ -71,51 +70,55 @@ def make_session(dl):
         base64_url = "aHR0cHM6Ly9kb3duZnJlZS1hcGlkYXRhLm9ucmVuZGVyLmNvbS9zZXNzaW9u"
         decoded_url = base64.b64decode(base64_url).decode("utf-8")
         v = str(dl["id"])
-        resp = requests.post(decoded_url,json={"id":v},headers={'Content-Type':'application/json'})
-        data = json.loads(resp.text)
-        session.cookies.update(data)
-        return session
+        async with session.post(decoded_url, json={"id": v}, headers={'Content-Type': 'application/json'}) as resp:
+            data = await resp.json()
+            jar = session.cookie_jar
+            for key, value in data.items():
+                jar.update_cookies({key: value})
+            return session
     if dl['m'] == 'moodle':
         url = dl['c']+'login/index.php'
     elif dl['m'] == 'rev2':
         url = dl['c'].split('author')[0]+"login/signIn"
     else:
       url = dl['c'].split('/$$$call$$$')[0]+ '/login/signIn'
-    resp = session.get(url,headers=headers,allow_redirects=True,verify=False)
-    soup = BeautifulSoup(resp.text, "html.parser")
-    if dl['m'] == 'moodle':
-      try:
-        token = soup.find("input", attrs={"name": "logintoken"})["value"]
-        payload = {"anchor": "",
-        "logintoken": token,
-        "username": username,
-        "password": password,
-        "rememberusername": 1}
-      except:
-        payload = {"anchor": "",
-        "username": username,
-        "password": password,
-        "rememberusername": 1}
-    elif dl['m'] == 'rev2':
-        payload = {"source":"",
-                   "username":username,
-                   "password":password,
-                   "remember":"1"}
-    else:
-      try:
-          csrfToken = soup.find('input',{'name':'csrfToken'})['value']
-          payload = {}
-          payload['csrfToken'] = csrfToken
-          payload['source'] = ''
-          payload['username'] = username
-          payload['password'] = password
-          payload['remember'] = '1'
-      except Exception as ex:
-          print(ex)
+    async with session.get(url, headers=headers, allow_redirects=True, ssl=False) as resp:
+        html = await resp.text()
+        soup = BeautifulSoup(html, "html.parser")
+
+        if dl['m'] == 'moodle':
+            try:
+                token = soup.find("input", attrs={"name": "logintoken"})["value"]
+                payload = {"anchor": "",
+                "logintoken": token,
+                "username": username,
+                "password": password,
+                "rememberusername": 1}
+            except:
+                payload = {"anchor": "",
+                "username": username,
+                "password": password,
+                "rememberusername": 1}
+        elif dl['m'] == 'rev2':
+            payload = {"source":"",
+                    "username":username,
+                    "password":password,
+                    "remember":"1"}
+        else:
+            try:
+                csrfToken = soup.find('input',{'name':'csrfToken'})['value']
+                payload = {}
+                payload['csrfToken'] = csrfToken
+                payload['source'] = ''
+                payload['username'] = username
+                payload['password'] = password
+                payload['remember'] = '1'
+            except Exception as ex:
+                print(ex)
     
-    resp = session.post(url,headers=headers,data=payload,verify=False,timeout=60)
-    if resp.url!=url:
-        return session
+    async with session.post(url, headers=headers, data=payload, ssl=False, timeout=60) as resp:
+        if resp.url != url:
+            return session
     return None
 
 class Downloader:
@@ -173,7 +176,7 @@ class Downloader:
             icon=ft.Icons.DOWNLOAD,
             icon_color=ft.Colors.CYAN_ACCENT,
             tooltip="Iniciar descarga",
-            on_click=self.queue_download,
+            on_click=lambda e: self.page.run_task(self.queue_download, e), 
             style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10), bgcolor=ft.Colors.GREY_800)
         )
 
@@ -320,11 +323,8 @@ class Downloader:
             self.mostrar_error("❌ Introduce una URL válida.")
             return
         try:
-            # 🔹 Convertir la cadena a un diccionario con `ast.literal_eval`
             url_data = ast.literal_eval(url_text)
-            # 📂 Extraer nombre del archivo
             filename = self.get_unique_filename(url_data.get("fn", "archivo_descarga.unknown"))
-            # 📜 Crear información de descarga
             download_info = {
                 "fn": filename,
                 "url": url_data,  # Guardar el diccionario original
@@ -358,9 +358,6 @@ class Downloader:
                             self.page.update()
                             # 🔄 Iniciar la descarga real
                             await self._download_file(dl["url"], status_text, progress_ring)
-                            status_text.value = "✅ Completado"  
-                            progress_ring.value = 1.0 
-                            self.page.update()
                             break
                 self.download_queue.task_done()
                 self.downloading = False
@@ -408,7 +405,7 @@ class Downloader:
                 dl['urls'] = eval(unshort(dl["urls"]))
 
             total_url = len(dl["urls"])
-            session = make_session(dl)
+            session = await make_session(dl)
             chunk_por = index
             downloaded_size = 0
 
@@ -433,22 +430,38 @@ class Downloader:
                 retries = 0
                 while retries < self.max_retries:
                     try:
-                        if dl['m'] in ['moodle', 'evea'] and not self._is_session_active(session, chunkurl):
+                        if dl['m'] in ['moodle', 'evea'] and not await self._is_session_active(session, chunkurl):
                             print("Sesión inactiva, regenerando sesión...")
-                            session = make_session(dl)
-                        with open(part_path, "wb") as part_file:
-                            resp = session.get(chunkurl, headers=headers, stream=True, verify=False)
-                            resp.raise_for_status()
-                            for chunk in resp.iter_content(chunk_size=8192):
-                                downloaded_size = sum(os.path.getsize(part) for part in part_files if os.path.exists(part))
-                                part_file.write(chunk)
-                                downloaded_mb = self.sizeof_fmt(downloaded_size)
-                                progress_percent = (downloaded_size / total_size)
-                                progress_ring.value = progress_percent
-                                status_text.value = f"📥 {downloaded_mb} / {total_mb} ({progress_percent * 100:.2f}%)"
-                                self.page.update()
+                            session = await make_session(dl)
+                        async with session.get(chunkurl, headers=headers, ssl=False) as resp:  # ✅ `async with` evita fugas de conexión
+                            if resp.status != 200:
+                                raise Exception(f"Error al descargar: {resp.status}")
+                            with open(part_path, "wb") as part_file:
+                                last_update_time = asyncio.get_event_loop().time()
+                                update_interval = 0.5 
+                                async for chunk in resp.content.iter_chunked(8192):
+                                    part_file.write(chunk)
+                                    downloaded_size = sum(os.path.getsize(part) for part in part_files if os.path.exists(part))
+                                    downloaded_mb = self.sizeof_fmt(downloaded_size)
+                                    progress_percent = (downloaded_size / total_size)
+                                    current_time = asyncio.get_event_loop().time()
+                                    if current_time - last_update_time >= update_interval:
+                                        progress_ring.value = progress_percent
+                                        status_text.value = f"📥 {downloaded_mb} / {total_mb} ({progress_percent * 100:.2f}%)"
+                                        self.page.update()
+                                        last_update_time = current_time
 
-                                await asyncio.sleep(0)
+                                        if update_interval < 1.0:
+                                            update_interval += 0.1  # Aumentar en 100ms si hay sobrecarga
+                                        elif update_interval > 1.0:
+                                            update_interval = 1.0  # Máximo 1s
+                                    await asyncio.sleep(0)
+
+                        status_text.value = "✅ Completado"  
+                        progress_ring.value = 1.0  
+                        self.page.update()
+
+                        await session.close()  
 
                         expected_size = total_parts if (i < total_url - 1) else total_size % total_parts
                         if os.path.getsize(part_path) < expected_size:
@@ -459,12 +472,12 @@ class Downloader:
                             continue
                         break
 
-                    except requests.exceptions.RequestException:
-                        if not self.check_connection():
+                    except aiohttp.ClientError:
+                        if not await self.check_connection():
                             self.mostrar_error("🔴 Sin conexión. Esperando reconexión...")
                             await self._retry_connection()
                             self.page.update()
-                            while not self.check_connection():
+                            while not await self.check_connection():
                                 await asyncio.sleep(5)
                             self.connection_lost_event.clear()
                             self.status_label.value = f"📥 Descargando..."
@@ -494,18 +507,18 @@ class Downloader:
     async def _retry_connection(self):
         """Reintenta la conexión hasta 5 veces antes de rendirse."""
         for _ in range(5):
-            if self.check_connection():
+            if await self.check_connection():
                 return True
             await asyncio.sleep(5)  # Espera sin bloquear la UI
         return False
 
-    def check_connection(self):
-        """Verifica el estado de la conexión."""
+    async def check_connection(self):
+        """Verifica el estado de la conexión de forma asíncrona."""
         try:
-            response = requests.get('https://www.portal.nauta.cu/login', timeout=5)  # Chequea conexión
-            if response.status_code == 200:
-                return True
-        except (requests.ConnectionError, Timeout):
+            async with aiohttp.ClientSession() as session:
+                async with session.get('https://www.portal.nauta.cu/login', timeout=5, ssl=False) as response:
+                    return response.status == 200
+        except (aiohttp.ClientError, asyncio.TimeoutError):
             return False
 
     def _merge_parts(self, output_path, num_parts):
@@ -556,44 +569,16 @@ class Downloader:
                     new_file.write(modified_chunk)
             os.replace(download_path + ".tmp", download_path)
             
-    def _is_session_active(self, session, test_url):
-        if not isinstance(session, requests.Session):
+    async def _is_session_active(self, session, test_url):
+        if not isinstance(session, aiohttp.ClientSession):  # ✅ Verificar `aiohttp.ClientSession`
             print("El objeto sesión no es válido.")
             return False
         try:
-            resp = session.head(test_url, timeout=30, verify=False)
-            return resp.status_code in {200, 204} 
-        except requests.exceptions.RequestException as ex:
+            async with session.head(test_url, timeout=30, ssl=False) as resp:  # ✅ Uso correcto de `aiohttp`
+                return resp.status in {200, 204}
+        except aiohttp.ClientError as ex:  # ✅ Captura errores de `aiohttp`
             print(f"Error al verificar sesión: {ex}")
             return False
-
-    def add_download(self, filename):
-        """Muestra en la UI que un archivo ha sido agregado a la cola."""
-        filet = filename
-        if len(filet) > 25:
-            filet = filename[:20] + "." + filename[-5:]
-        file_status = ft.Text(f"📂 {filet} - Conectando...", size=16)
-        self.download_list.controls.append(file_status)
-        self.page.update()
-        return file_status
-
-    def update_download(self, filename, progress, downloaded_mb, total_mb):
-        """Actualiza el estado de descarga con progreso y velocidad."""
-        percentage = progress * 100
-        downloaded_str = self.sizeof_fmt(downloaded_mb)
-        total_str = self.sizeof_fmt(total_mb)  
-        self.progress_bar.value = progress
-        self.progress_text.value = f"{downloaded_str} / {total_str} ({percentage:.2f}%)"
-        self.page.update()
-
-    def complete_download(self, filename):
-        """Marca la descarga como finalizada en la UI."""
-        for text_control in self.download_list.controls:
-            if text_control.value.startswith(f"📂 {filename}"):
-                text_control.value = f"📂 {filename} - ✅Descarga Finalizada"
-                text_control.update()
-                self.page.update()  # 🔹 Asegurar actualización en Flet
-                return
 
     def mostrar_error(self, mensaje):
         """Muestra un mensaje de error en la UI."""
@@ -616,14 +601,21 @@ class Downloader:
             print("🔄 Manteniendo viva la app...")
             await asyncio.sleep(1) 
 
+def get_resource_path(relative_path):
+    """Obtiene la ruta correcta del archivo en modo normal y en modo compilado."""
+    if getattr(sys, 'frozen', False):  # Si está compilado con PyInstaller
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.dirname(__file__), relative_path)
+
 def main(page: ft.Page):
     page.adaptive = True
     page.title = "Down Free"
+    page.window.icon = get_resource_path("icon.ico")
     page.scroll = "adaptive"
     page.window.width = 400 # Ajusta el ancho de la ventana
     page.window.height = 700 # Ajusta la altura de la ventana
     page.window.resizable = False  # Permite redimensionar la ventana
     page.update()
-    downloader = Downloader(page)
+    Downloader(page)
 
 ft.app(main)
