@@ -113,7 +113,7 @@ jobs:
       run: chcp 65001
       shell: cmd
 
-    - name: Setup Python
+    - name: Setup Python ${{ env.PYTHON_VERSION }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
@@ -209,6 +209,24 @@ jobs:
         flutter config --no-analytics
         flet build apk --verbose --build-number=$BUILD_NUMBER --build-version=$BUILD_VERSION
 
+    - name: Install apktool
+      run: |
+        curl -LO https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.8.1.jar
+        chmod +x apktool_2.8.1.jar
+        sudo mv apktool_2.8.1.jar /usr/local/bin/apktool
+
+    - name: Extract AndroidManifest.xml
+      run: |
+        apktool d build/apk/app-release.apk -o extracted_apk
+
+    - name: Upload AndroidManifest.xml
+      uses: actions/upload-artifact@v4.3.4
+      with:
+        name: AndroidManifest
+        path: AndroidManifest.xml
+        if-no-files-found: error
+        overwrite: true
+        
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4.3.4
       with:
