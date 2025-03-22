@@ -12,6 +12,9 @@ from bs4 import BeautifulSoup
 import json
 from threading import Event
 
+import android
+
+
 file_path= Path.home() / "Download"
 
 headers = {"User-Agent":"Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0"}
@@ -124,20 +127,19 @@ async def make_session(dl):
 class Downloader:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.running = True
-        self.page.run_task(self.keep_alive)
         self.connection_lost_event = Event() 
         self.download_queue = asyncio.Queue()
-        self.pause_event = Event()
-        self.stop_event = Event()
         self.downloading = False 
         self.max_retries = 5
-
+                                           
         self.download_path = self.get_default_download_path()
         self.current_page = "downloads"  # Página actual
-
         self.download_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
+
+        self.wake_lock = None
         self.setup_ui()
+
+        self.page.run_task(self.keep_alive)
         self.page.run_task(self.start_download)
 
     def get_default_download_path(self):
@@ -338,31 +340,27 @@ class Downloader:
             print(f"❌ Error en la URL: {str(ex)}")
 
     async def start_download(self):
-        """📥 Procesa las descargas en la cola, actualizando la UI en tiempo real."""
+        """📥 Procesa las descargas en la cola, respetando la concurrencia."""
         while True:
             if not self.downloading and not self.download_queue.empty():
-                self.downloading = True  # Marcar como en descarga
+                self.acquire_wake_lock() 
+                self.downloading = True
                 dl = await self.download_queue.get()
                 filename = dl["fn"]
                 if len(filename) > 25:
                     filename = filename[:20] + "." + filename[-5:]
-                # 🔹 Buscar la tarjeta de descarga
-                for card in self.download_list.controls:
-                    if isinstance(card, ft.Container):
-                        row = card.content
-                        if isinstance(row, ft.Row) and row.controls[1].controls[0].value == filename:
-                            status_text = row.controls[1].controls[1]  # Estado de descarga
-                            progress_ring = row.controls[2]  # Barra de progreso
-                            # 📂 Actualizar estado en la UI
-                            status_text.value = "📥 Iniciando..."
-                            self.page.update()
-                            # 🔄 Iniciar la descarga real
-                            await self._download_file(dl["url"], status_text, progress_ring)
-                            break
+                status_text, progress_ring = self.find_download_card(filename)
+
+                if status_text:
+                    status_text.value = "📥 Iniciando..."
+                    self.page.update()
+
+                    await self._download_file(dl["url"], status_text, progress_ring)
+
                 self.download_queue.task_done()
                 self.downloading = False
-                self.page.update()
-            await asyncio.sleep(1)
+                self.release_wake_lock()
+            await asyncio.sleep(1) 
 
     def add_download_card(self, dl):
         """📜 Agregar una tarjeta visual para la descarga con progreso dinámico."""
@@ -376,19 +374,25 @@ class Downloader:
             content=ft.Row([
                 ft.Icon(ft.Icons.FILE_DOWNLOAD, color=ft.Colors.CYAN_ACCENT),
                 ft.Column([
-                    ft.Text(filename, size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                    status_text  # Estado dinámico
+                    ft.Text(filename, size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE), status_text  # Estado dinámico
                 ], spacing=2),
                 progress_ring  # Barra de progreso circular
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            padding=10,
-            bgcolor=ft.Colors.GREY_800,
-            border_radius=10
+            padding=10, bgcolor=ft.Colors.GREY_800, border_radius=10
         )
         self.download_list.controls.append(card)
         self.page.update()
         return status_text, progress_ring
 
+    def find_download_card(self, filename):
+        """🔍 Busca la tarjeta de descarga por nombre."""
+        for card in self.download_list.controls:
+            if isinstance(card, ft.Container):
+                row = card.content
+                if isinstance(row, ft.Row) and row.controls[1].controls[0].value == filename:
+                    return row.controls[1].controls[1], row.controls[2]
+        return None, None
+    
     async def _download_file(self, dl, status_text, progress_ring, ichunk=0, index=0):
         try:
             filename = dl['fn']
@@ -438,24 +442,18 @@ class Downloader:
                                 raise Exception(f"Error al descargar: {resp.status}")
                             with open(part_path, "wb") as part_file:
                                 last_update_time = asyncio.get_event_loop().time()
-                                update_interval = 0.5 
                                 async for chunk in resp.content.iter_chunked(8192):
                                     part_file.write(chunk)
                                     downloaded_size = sum(os.path.getsize(part) for part in part_files if os.path.exists(part))
                                     downloaded_mb = self.sizeof_fmt(downloaded_size)
                                     progress_percent = (downloaded_size / total_size)
                                     current_time = asyncio.get_event_loop().time()
-                                    if current_time - last_update_time >= update_interval:
+                                    if current_time - last_update_time >= 0.5:
                                         progress_ring.value = progress_percent
-                                        status_text.value = f"📥 {downloaded_mb} / {total_mb} ({progress_percent * 100:.2f}%)"
+                                        status_text.value = f"{downloaded_mb} / {total_mb} ({progress_percent * 100:.2f}%)"
                                         self.page.update()
                                         last_update_time = current_time
-
-                                        if update_interval < 1.0:
-                                            update_interval += 0.1  # Aumentar en 100ms si hay sobrecarga
-                                        elif update_interval > 1.0:
-                                            update_interval = 1.0  # Máximo 1s
-                                    await asyncio.sleep(0)
+                                    await asyncio.sleep(0) 
 
                         expected_size = total_parts if (i < total_url - 1) else total_size % total_parts
                         if os.path.getsize(part_path) < expected_size:
@@ -594,6 +592,17 @@ class Downloader:
             num /= 1024.0
         return f"{num:.2f} Yi{suffix}"
     
+    def acquire_wake_lock(self):
+        """Mantiene la app activa en segundo plano en Android."""
+        power_manager = android.get_system_service(android.POWER_SERVICE)
+        self.wake_lock = power_manager.newWakeLock(android.WAKE_LOCK_PARTIAL, "Downloader::Lock")
+        self.wake_lock.acquire()
+
+    def release_wake_lock(self):
+        """Libera el WakeLock cuando la descarga finaliza."""
+        if self.wake_lock and self.wake_lock.isHeld():
+            self.wake_lock.release()
+
     async def keep_alive(self):
         """Mantiene la app en segundo plano."""
         while True:
