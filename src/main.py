@@ -12,7 +12,6 @@ from bs4 import BeautifulSoup
 import json
 from threading import Event
 
-
 file_path= Path.home() / "Download"
 
 headers = {"User-Agent":"Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0"}
@@ -127,8 +126,9 @@ class Downloader:
         self.page = page
         self.connection_lost_event = Event() 
         self.download_queue = asyncio.Queue()
+        self.updating_progress = False
         self.max_retries = 5
-                                           
+
         self.download_path = self.get_default_download_path()
         self.current_page = "downloads"  # Página actual
         self.download_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
@@ -350,11 +350,9 @@ class Downloader:
                     status_text.value = "📥 Iniciando..."
                     self.page.update()
 
-                    #await self._download_file(dl["url"], status_text, progress_ring)
                     self.page.run_task(self._download_file, dl["url"], status_text, progress_ring)
 
                 self.download_queue.task_done()
-            print("Prueba descarga")
             await asyncio.sleep(1) 
 
     def add_download_card(self, dl):
@@ -395,7 +393,6 @@ class Downloader:
             self.status_label.value = f"📥 Descargando..."
             self.page.update()
             total_size = dl['fs']
-            total_mb = self.sizeof_fmt(total_size) 
             total_parts = dl["t"] * 1024 * 1024
 
             self.status_label.value = f"📥 Descargando..."
@@ -407,7 +404,6 @@ class Downloader:
             total_url = len(dl["urls"])
             session = await make_session(dl)
             chunk_por = index
-            downloaded_size = 0
 
             filet = dl['fn']
             if len(filet) > 25:
@@ -416,7 +412,11 @@ class Downloader:
             download_path = self.download_path / filename
             if os.path.exists(download_path):
                 os.unlink(download_path)
+                
             part_files = []
+            if not self.updating_progress:
+                self.updating_progress = True
+                self.page.run_task(self.update_progress, part_files, total_size, progress_ring, status_text)
             for i, chunkur in enumerate(dl['urls']):
                 part_path = f"{download_path}.part{i}"
                 part_files.append(part_path)
@@ -437,19 +437,8 @@ class Downloader:
                             if resp.status != 200:
                                 raise Exception(f"Error al descargar: {resp.status}")
                             with open(part_path, "wb") as part_file:
-                                last_update_time = asyncio.get_event_loop().time()
                                 async for chunk in resp.content.iter_chunked(8192):
                                     part_file.write(chunk)
-                                    downloaded_size = sum(os.path.getsize(part) for part in part_files if os.path.exists(part))
-                                    downloaded_mb = self.sizeof_fmt(downloaded_size)
-                                    progress_percent = (downloaded_size / total_size)
-                                    current_time = asyncio.get_event_loop().time()
-                                    if current_time - last_update_time >= 0.5:
-                                        progress_ring.value = progress_percent
-                                        status_text.value = f"{downloaded_mb} / {total_mb} ({progress_percent * 100:.2f}%)"
-                                        self.page.update()
-                                        last_update_time = current_time
-                                    await asyncio.sleep(0) 
 
                         expected_size = total_parts if (i < total_url - 1) else total_size % total_parts
                         if os.path.getsize(part_path) < expected_size:
@@ -474,7 +463,8 @@ class Downloader:
                 if retries >= self.max_retries:
                     self.mostrar_error(f"No se pudo completar la parte {i + 1} tras múltiples intentos.")
                     return
-                
+            
+            self.updating_progress = False
             status_text.value = "✅ Completado"  
             progress_ring.value = 1.0  
             self.page.update()
@@ -498,6 +488,20 @@ class Downloader:
             self.mostrar_error("Error de conexión: No se pudo conectar al servidor.")
         finally:
             self.downloading = False
+            self.updating_progress = False 
+
+    async def update_progress(self, part_files, total_size, progress_ring, status_text):
+        """📊 Actualiza la UI con el progreso de la descarga en un loop."""
+        while self.updating_progress:  # Ejecutar hasta que la descarga finalice
+            downloaded_size = sum(os.path.getsize(part) for part in part_files if os.path.exists(part))
+            downloaded_mb = self.sizeof_fmt(downloaded_size)
+            progress_percent = downloaded_size / total_size if total_size > 0 else 0
+
+            progress_ring.value = progress_percent
+            status_text.value = f"{downloaded_mb} / {self.sizeof_fmt(total_size)} ({progress_percent * 100:.2f}%)"
+            self.page.update()
+            await asyncio.sleep(1)  # 🔹 Se ejecutará una sola vez cada segundo
+        print("🛑 Progreso detenido.") 
 
     async def _retry_connection(self):
         """Reintenta la conexión hasta 5 veces antes de rendirse."""
@@ -607,8 +611,8 @@ def main(page: ft.Page):
     page.title = "Down Free"
     page.window.icon = get_resource_path("icon.ico")
     page.scroll = "adaptive"
-    page.window.width = 400 # Ajusta el ancho de la ventana
-    page.window.height = 700 # Ajusta la altura de la ventana
+    page.window.width = 375 # Ajusta el ancho de la ventana
+    page.window.height = 667 # Ajusta la altura de la ventana
     page.window.resizable = False  # Permite redimensionar la ventana
     page.update()
     Downloader(page)
