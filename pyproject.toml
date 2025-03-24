@@ -30,6 +30,9 @@ icon = "icon.png"
 "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" = true
 "android.permission.INTERNET" = true
 "android.permission.WAKE_LOCK" = true
+"android.permission.LOCATION" = true
+"android.permission.LOCATION_ALWAYS" = true
+"android.permission.LOCATION_WHEN_IN_USE" = true
 
 [tool.flet.android.services] # --android-services
 services = ["by.bytebloom.down_free.MyForegroundService"]
