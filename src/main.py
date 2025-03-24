@@ -603,7 +603,10 @@ class Downloader:
 
     def start_service(self):
         try:
-            subprocess.Popen(["am", "start-foreground-service", "-n", "by.bytebloom.down_free/.MyForegroundService"])
+            subprocess.run(
+                ["adb", "shell", "am", "start-foreground-service", "-n", "by.bytebloom.down_free/.MyForegroundService"],
+                capture_output=True, text=True, check=True
+            )
             self.mostrar_error(f"✅ Servicio iniciado en Android.")
         except Exception as e:
             self.mostrar_error(f"❌ Error al iniciar el servicio:{e}")
