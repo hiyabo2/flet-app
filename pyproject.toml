@@ -19,16 +19,17 @@ flutter.dependencies = ["flet_permission_handler"]
 icon = "icon.png"
 
 [tool.flet.android.permission] # --android-permissions
+"android.permission.FOREGROUND_SERVICE" = true
 "android.permission.READ_EXTERNAL_STORAGE" = true
 "android.permission.WRITE_EXTERNAL_STORAGE" = true
 "android.permission.MANAGE_EXTERNAL_STORAGE" = true
 "android.permission.STORAGE" = true
-"android.permission.BACKGROUND_REFRESH" = true
-"android.permission.IGNORE_BATTERY_OPTIMIZATIONS" = true
 "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" = true
 "android.permission.INTERNET" = true
 "android.permission.WAKE_LOCK" = true
-"android.permission.FOREGROUND_SERVICE" = true
+
+[tool.flet.android.services] # --android-services
+"by.bytebloom.MyForegroundService"
 
 [tool.flet.ios.info] # --info-plist
 NSLocationWhenInUseUsageDescription = "This app uses location service when in use."
