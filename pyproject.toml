@@ -29,7 +29,7 @@ icon = "icon.png"
 "android.permission.FOREGROUND_SERVICE" = true
 
 [tool.flet.android.services] # --android-services
-services = ["by.bytebloom.MyForegroundService"]
+services = ["by.bytebloom.down_free.MyForegroundService"]
 
 [tool.flet.ios.info] # --info-plist
 NSLocationWhenInUseUsageDescription = "This app uses location service when in use."
