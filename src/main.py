@@ -129,6 +129,7 @@ class Downloader:
         self.updating_progress = False
         self.max_retries = 5
 
+
         self.download_path = self.get_default_download_path()
         self.current_page = "downloads"  # Página actual
         self.download_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
@@ -600,6 +601,13 @@ class Downloader:
             print("🔄 Manteniendo viva la app...")
             await asyncio.sleep(1) 
 
+    def start_service(self):
+        try:
+            subprocess.Popen(["am", "startservice", "-n", "by.bytebloom/.MyForegroundService"])
+            self.mostrar_error(f"✅ Servicio iniciado en Android.")
+        except Exception as e:
+            self.mostrar_error(f"❌ Error al iniciar el servicio:{e}")
+
 def get_resource_path(relative_path):
     """Obtiene la ruta correcta del archivo en modo normal y en modo compilado."""
     if getattr(sys, 'frozen', False):  # Si está compilado con PyInstaller
@@ -607,14 +615,17 @@ def get_resource_path(relative_path):
     return os.path.join(os.path.dirname(__file__), relative_path)
 
 def main(page: ft.Page):
-    page.adaptive = True
+    #page.adaptive = True
     page.title = "Down Free"
     page.window.icon = get_resource_path("icon.ico")
     page.scroll = "adaptive"
     page.window.width = 375 # Ajusta el ancho de la ventana
     page.window.height = 667 # Ajusta la altura de la ventana
     page.window.resizable = False  # Permite redimensionar la ventana
+    download = Downloader(page)
+    btn_start = ft.ElevatedButton("Iniciar Servicio", on_click=lambda e: download.start_service())
+    page.add(btn_start)
     page.update()
-    Downloader(page)
+    
 
 ft.app(main)
