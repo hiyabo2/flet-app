@@ -1,4 +1,4 @@
-package by.bytebloom;
+package by.bytebloom.down_free;
 
 import android.app.Service;
 import android.content.Intent;
@@ -18,30 +18,39 @@ public class MyForegroundService extends Service {
         super.onCreate();
         Log.d(TAG, "🚀 Servicio en segundo plano iniciado...");
 
+        createNotificationChannel();
+        startForeground(1, buildNotification("App ejecutándose en segundo plano"));
+    }
+
+    private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 "Foreground Service",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_HIGH  // Asegura que sea visible
             );
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.createNotificationChannel(channel);
             }
-            Notification notification = new Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("App ejecutándose en segundo plano")
-                .setContentText("Presiona aquí para volver a la app")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setOngoing(true)
-                .build();
-            startForeground(1, notification);
         }
+    }
+
+    private Notification buildNotification(String message) {
+        return new Notification.Builder(this, CHANNEL_ID)
+            .setContentTitle("Down Free")
+            .setContentText(message)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setOngoing(true)
+            .setPriority(Notification.PRIORITY_HIGH)  // IMPORTANTE
+            .build();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "🔄 Manteniendo la app activa en segundo plano...");
-        return START_STICKY;  // Hace que el servicio se reinicie si el sistema lo mata
+        startForeground(1, buildNotification("Servicio aún en ejecución"));
+        return START_STICKY;  // Mantiene el servicio activo
     }
 
     @Override
