@@ -603,13 +603,13 @@ class Downloader:
 
     def start_service(self):
         try:
-            subprocess.run(
-                ["adb", "shell", "am", "start-foreground-service", "-n", "by.bytebloom.down_free/.MyForegroundService"],
+            result = subprocess.run(
+                ["am", "start-foreground-service", "-n", "by.bytebloom.down_free/.MyForegroundService"],
                 capture_output=True, text=True, check=True
             )
-            self.mostrar_error(f"✅ Servicio iniciado en Android.")
+            self.mostrar_error(f"✅ Servicio iniciado en Android: {result.stdout}")
         except Exception as e:
-            self.mostrar_error(f"❌ Error al iniciar el servicio:{e}")
+            self.mostrar_error(f"❌ Error al iniciar el servicio: {e}")
 
 def get_resource_path(relative_path):
     """Obtiene la ruta correcta del archivo en modo normal y en modo compilado."""
