@@ -11,6 +11,8 @@ import base64
 from bs4 import BeautifulSoup
 import json
 from threading import Event
+import flet_permission_handler as fph
+import flet_geolocator as fg
 
 file_path= Path.home() / "Download"
 
@@ -136,7 +138,6 @@ class Downloader:
 
         self.setup_ui()
 
-        #self.page.run_task(self.keep_alive)
         self.page.run_task(self.start_download)
 
     def get_default_download_path(self):
@@ -227,7 +228,7 @@ class Downloader:
             bgcolor=ft.Colors.GREY_900,
             border_radius=10,
             ink=True,
-            data=ft.PermissionType.MANAGE_EXTERNAL_STORAGE,
+            data=fph.PermissionType.MANAGE_EXTERNAL_STORAGE,
             on_click=self.request_permission
         )
 
@@ -240,7 +241,7 @@ class Downloader:
             bgcolor=ft.Colors.GREY_900,
             border_radius=10,
             ink=True,
-            data=ft.PermissionType.IGNORE_BATTERY_OPTIMIZATIONS,
+            data=fph.PermissionType.IGNORE_BATTERY_OPTIMIZATIONS,
             on_click=self.request_permission
         )
 
@@ -254,7 +255,7 @@ class Downloader:
         )
 
         self.page.add(self.download_tab)  # Iniciar con la pestaña de descargas
-        self.ph = ft.PermissionHandler()
+        self.ph = fph.PermissionHandler()
         self.page.overlay.append(self.ph)
         self.page.update()
 
@@ -279,7 +280,7 @@ class Downloader:
             self.page.add(ft.Text(f"Error al obtener Permisos: {ex}"))
 
     def open_storage_settings(self):
-        """Abre la configuración de almacenamiento de la app en Android."""
+        """Abre la configuración de la app en Android."""
         if self.ph.open_app_settings():
             self.page.add(ft.Text("⚙️ Abriendo configuración de la app..."))
         else:
@@ -302,7 +303,7 @@ class Downloader:
 
 
     def get_unique_filename(self, filename: str) -> str:
-        """Genera un nombre único basado en un contador interno sin revisar archivos existentes."""
+        """Genera un nombre único basado en un contador interno."""
         base, ext = os.path.splitext(filename)  # Separar nombre y extensión
         # Si el archivo ya tiene un contador, amentarlo
         if filename in filename_counters:
@@ -316,7 +317,7 @@ class Downloader:
         return f"{base} ({filename_counters[filename]}){ext}"
 
     async def queue_download(self, e):
-        """Añadir una descarga a la cola usando `ast.literal_eval`."""
+        """Añadir una descarga a la cola"""
         url_text = self.url_input.value.strip()
         if not url_text:
             self.mostrar_error("❌ Introduce una URL válida.")
@@ -351,7 +352,7 @@ class Downloader:
                     status_text.value = "📥 Iniciando..."
                     self.page.update()
 
-                    self.page.run_task(self._download_file, dl["url"], status_text, progress_ring)
+                    await self._download_file(dl["url"], status_text, progress_ring)
 
                 self.download_queue.task_done()
             await asyncio.sleep(1) 
@@ -451,6 +452,7 @@ class Downloader:
                         break
 
                     except aiohttp.ClientError:
+                        retries += 1
                         if not await self.check_connection():
                             self.mostrar_error("🔴 Sin conexión. Esperando reconexión...")
                             await self._retry_connection()
@@ -501,7 +503,7 @@ class Downloader:
             progress_ring.value = progress_percent
             status_text.value = f"{downloaded_mb} / {self.sizeof_fmt(total_size)} ({progress_percent * 100:.2f}%)"
             self.page.update()
-            await asyncio.sleep(1)  # 🔹 Se ejecutará una sola vez cada segundo
+            await asyncio.sleep(0)  # 🔹 Se ejecutará una sola vez cada segundo
         print("🛑 Progreso detenido.") 
 
     async def _retry_connection(self):
@@ -595,22 +597,6 @@ class Downloader:
             num /= 1024.0
         return f"{num:.2f} Yi{suffix}"
 
-    async def keep_alive(self):
-        """Mantiene la app en segundo plano."""
-        while True:
-            print("🔄 Manteniendo viva la app...")
-            await asyncio.sleep(1) 
-
-    def start_service(self):
-        try:
-            result = subprocess.run(
-                ["am", "start-foreground-service", "-n", "by.bytebloom.down_free/.MyForegroundService"],
-                capture_output=True, text=True, check=True
-            )
-            self.mostrar_error(f"✅ Servicio iniciado en Android: {result.stdout}")
-        except Exception as e:
-            self.mostrar_error(f"❌ Error al iniciar el servicio: {e}")
-
 def get_resource_path(relative_path):
     """Obtiene la ruta correcta del archivo en modo normal y en modo compilado."""
     if getattr(sys, 'frozen', False):  # Si está compilado con PyInstaller
@@ -618,16 +604,45 @@ def get_resource_path(relative_path):
     return os.path.join(os.path.dirname(__file__), relative_path)
 
 def main(page: ft.Page):
-    #page.adaptive = True
+    page.adaptive = True
     page.title = "Down Free"
+
+    resultado = ft.Text() 
+
+    def handle_position_change(e):
+        resultado.value = f"Ubicación actualizada: {e.latitude}, {e.longitude}"
+        page.update()
+
+    gl = fg.Geolocator(
+        location_settings=fg.GeolocatorSettings(
+            accuracy=fg.GeolocatorPositionAccuracy.BEST,
+            foreground_notification_text="Obteniendo ubicación en segundo plano",
+            foreground_notification_title="Ubicación Activa",
+            foreground_notification_enable_wake_lock=True,  # Mantiene CPU activa
+            foreground_notification_enable_wifi_lock=True,  # Mantiene WiFi activo
+            foreground_notification_set_ongoing=True,  # No se puede descartar
+        ),
+        on_position_change=handle_position_change,  # Se ejecuta cuando la ubicación cambia
+        on_error=lambda e: page.add(ft.Text(f"Error: {e.data}")),
+    )
+
+    async def iniciar_seguimiento(e):
+        await gl.start_position_stream_async()  # Inicia el seguimiento continuo
+        page.add(ft.Text("Seguimiento iniciado en segundo plano."))
+
+    async def detener_seguimiento(e):
+        await gl.stop_position_stream_async()  # Detiene el seguimiento
+        page.add(ft.Text("Seguimiento detenido."))
+
     page.window.icon = get_resource_path("icon.ico")
     page.scroll = "adaptive"
     page.window.width = 375 # Ajusta el ancho de la ventana
     page.window.height = 667 # Ajusta la altura de la ventana
     page.window.resizable = False  # Permite redimensionar la ventana
     download = Downloader(page)
-    btn_start = ft.ElevatedButton("Iniciar Servicio", on_click=lambda e: download.start_service())
-    page.add(btn_start)
+    boton_iniciar = ft.ElevatedButton(text="Iniciar Seguimiento", on_click=iniciar_seguimiento)
+    boton_detener = ft.ElevatedButton(text="Detener Seguimiento", on_click=detener_seguimiento)
+    page.add(boton_iniciar, boton_detener, resultado)
     page.update()
     
 
