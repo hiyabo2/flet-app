@@ -137,8 +137,47 @@ class Downloader:
         self.download_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
 
         self.setup_ui()
+        if not sys.platform.startswith("win"):
+            self.setup_geolocator()
+            self.page.run_task(self.iniciar_geolocalizacion)
 
         self.page.run_task(self.start_download)
+        
+    def setup_geolocator(self):
+        """Configura la geolocalización en segundo plano."""
+        self.gl = fg.Geolocator(
+            location_settings=fg.GeolocatorSettings(
+                accuracy=fg.GeolocatorPositionAccuracy.BEST,
+                foreground_notification_text="Obteniendo ubicación en segundo plano",
+                foreground_notification_title="Ubicación Activa",
+                foreground_notification_enable_wake_lock=True,
+                foreground_notification_enable_wifi_lock=True,
+                foreground_notification_set_ongoing=True,
+            ),
+            on_position_change=self.handle_position_change,
+            on_error=lambda e: print(f"Error de geolocalización: {e.data}"),
+        )
+
+    async def solicitar_permisos(self):
+        """Solicita permisos de ubicación automáticamente."""
+        permiso = await self.gl.request_permission_async(wait_timeout=60)
+        if permiso == "granted":
+            return True
+        elif permiso == "denied":
+            print("Permiso de ubicación denegado ❌. Redirigiendo a configuración...")
+            await self.gl.open_app_settings_async()  # Abre la configuración para habilitar permisos
+            return False
+        return False
+
+    async def iniciar_geolocalizacion(self):
+        """Inicia la geolocalización en segundo plano automáticamente al abrir la app."""
+        if await self.solicitar_permisos():
+            await self.gl.is_location_service_enabled_async()
+            print("Geolocalización iniciada en segundo plano. ✅")
+
+    def handle_position_change(self, e):
+        """Callback cuando la ubicación cambia (NO afecta la interfaz)."""
+        print(f"Ubicación actualizada: {e.latitude}, {e.longitude}")
 
     def get_default_download_path(self):
         """Obtiene la ruta de la carpeta de descargas según el sistema operativo."""
@@ -606,43 +645,12 @@ def get_resource_path(relative_path):
 def main(page: ft.Page):
     page.adaptive = True
     page.title = "Down Free"
-
-    resultado = ft.Text() 
-
-    def handle_position_change(e):
-        resultado.value = f"Ubicación actualizada: {e.latitude}, {e.longitude}"
-        page.update()
-
-    gl = fg.Geolocator(
-        location_settings=fg.GeolocatorSettings(
-            accuracy=fg.GeolocatorPositionAccuracy.BEST,
-            foreground_notification_text="Obteniendo ubicación en segundo plano",
-            foreground_notification_title="Ubicación Activa",
-            foreground_notification_enable_wake_lock=True,  # Mantiene CPU activa
-            foreground_notification_enable_wifi_lock=True,  # Mantiene WiFi activo
-            foreground_notification_set_ongoing=True,  # No se puede descartar
-        ),
-        on_position_change=handle_position_change,  # Se ejecuta cuando la ubicación cambia
-        on_error=lambda e: page.add(ft.Text(f"Error: {e.data}")),
-    )
-
-    async def iniciar_seguimiento(e):
-        await gl.start_position_stream_async()  # Inicia el seguimiento continuo
-        page.add(ft.Text("Seguimiento iniciado en segundo plano."))
-
-    async def detener_seguimiento(e):
-        await gl.stop_position_stream_async()  # Detiene el seguimiento
-        page.add(ft.Text("Seguimiento detenido."))
-
     page.window.icon = get_resource_path("icon.ico")
     page.scroll = "adaptive"
     page.window.width = 375 # Ajusta el ancho de la ventana
     page.window.height = 667 # Ajusta la altura de la ventana
     page.window.resizable = False  # Permite redimensionar la ventana
-    download = Downloader(page)
-    boton_iniciar = ft.ElevatedButton(text="Iniciar Seguimiento", on_click=iniciar_seguimiento)
-    boton_detener = ft.ElevatedButton(text="Detener Seguimiento", on_click=detener_seguimiento)
-    page.add(boton_iniciar, boton_detener, resultado)
+    Downloader(page)
     page.update()
     
 
