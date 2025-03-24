@@ -16,6 +16,8 @@ company = "ByteBloom" # --company
 copyright = "Copyright (C) 2025 by ByteBloom" # --copyright
 build_number = 2 # --build-number
 flutter.dependencies = ["flet_permission_handler"]
+flutter.categories = ["android.intent.category.LAUNCHER", "android.intent.category.APP"]
+flutter.background_mode = "foreground"
 icon = "icon.png"
 
 [tool.flet.android.permission] # --android-permissions
