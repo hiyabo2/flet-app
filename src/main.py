@@ -130,21 +130,14 @@ class Downloader:
         self.download_queue = asyncio.Queue()
         self.updating_progress = False
         self.max_retries = 5
-
-
         self.download_path = self.get_default_download_path()
         self.current_page = "downloads"  # Página actual
         self.download_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
 
         self.setup_ui()
-        if not sys.platform.startswith("win"):
-            self.setup_geolocator()
-            self.page.run_task(self.iniciar_geolocalizacion)
-
         self.page.run_task(self.start_download)
-        
-    def setup_geolocator(self):
-        """Configura la geolocalización en segundo plano."""
+
+
         self.gl = fg.Geolocator(
             location_settings=fg.GeolocatorSettings(
                 accuracy=fg.GeolocatorPositionAccuracy.BEST,
@@ -158,22 +151,9 @@ class Downloader:
             on_error=lambda e: print(f"Error de geolocalización: {e.data}"),
         )
 
-    async def solicitar_permisos(self):
-        """Solicita permisos de ubicación automáticamente."""
-        permiso = await self.gl.request_permission_async(wait_timeout=60)
-        if permiso == "granted":
-            return True
-        elif permiso == "denied":
-            print("Permiso de ubicación denegado ❌. Redirigiendo a configuración...")
-            await self.gl.open_app_settings_async()  # Abre la configuración para habilitar permisos
-            return False
-        return False
-
-    async def iniciar_geolocalizacion(self):
-        """Inicia la geolocalización en segundo plano automáticamente al abrir la app."""
-        if await self.solicitar_permisos():
-            await self.gl.is_location_service_enabled_async()
-            print("Geolocalización iniciada en segundo plano. ✅")
+    async def handle_permission_request(self, e):
+        p = await self.gl.request_permission_async(wait_timeout=60)
+        self.page.add(ft.Text(f"request_permission: {p}"))
 
     def handle_position_change(self, e):
         """Callback cuando la ubicación cambia (NO afecta la interfaz)."""
@@ -284,11 +264,25 @@ class Downloader:
             on_click=self.request_permission
         )
 
+        self.open_location_settings = ft.Container(
+            content=ft.Column([
+                ft.Text("⚙️ Obtener Permisos de Ubicacion", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                ft.Text("Para un correcto funcionamiento, por favor otorgue permisos de ubicacion", size=14, color=ft.Colors.GREY_400),
+            ], spacing=5),
+            padding=15,
+            bgcolor=ft.Colors.GREY_900,
+            border_radius=10,
+            ink=True,
+            data=fph.PermissionType.IGNORE_BATTERY_OPTIMIZATIONS,
+            on_click=self.handle_permission_request,
+        )
+
         self.config_tab = ft.SafeArea(
             ft.Column([
                 ft.Text("⚙️ Settings", size=20, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
                 self.storage_settings_container,
                 self.ignore_battery_optimizations,
+                self.open_location_settings,
                 self.download_path_container
             ], alignment=ft.MainAxisAlignment.CENTER)
         )
