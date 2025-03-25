@@ -141,11 +141,6 @@ class Downloader:
         self.gl = fg.Geolocator(
             location_settings=fg.GeolocatorSettings(
                 accuracy=fg.GeolocatorPositionAccuracy.BEST,
-                foreground_notification_text ="Obteniendo ubicación en segundo plano",
-                foreground_notification_title ="Ubicación Activa",
-                foreground_notification_channel_name = "Background Location",
-                foreground_notification_enable_wake_lock=True,
-                foreground_notification_set_ongoing=True,
             ),
             on_position_change=self.handle_position_change,
             on_error=lambda e: print(f"Error de geolocalización: {e.data}"),
