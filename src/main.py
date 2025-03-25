@@ -141,15 +141,18 @@ class Downloader:
         self.gl = fg.Geolocator(
             location_settings=fg.GeolocatorSettings(
                 accuracy=fg.GeolocatorPositionAccuracy.BEST,
-                foreground_notification_text="Obteniendo ubicación en segundo plano",
-                foreground_notification_title="Ubicación Activa",
+                foreground_notification_text ="Obteniendo ubicación en segundo plano",
+                foreground_notification_title ="Ubicación Activa",
+                foreground_notification_channel_name = "Background Location",
                 foreground_notification_enable_wake_lock=True,
-                foreground_notification_enable_wifi_lock=True,
                 foreground_notification_set_ongoing=True,
             ),
             on_position_change=self.handle_position_change,
             on_error=lambda e: print(f"Error de geolocalización: {e.data}"),
         )
+
+        self.page.overlay.append(self.gl)
+        self.page.update()
 
     async def handle_permission_request(self, e):
         p = await self.gl.request_permission_async(wait_timeout=60)
@@ -168,7 +171,8 @@ class Downloader:
             return Path.home() / "Downloads"  # 📂 Windows
         else:
             return Path("/storage/emulated/0/Download")
-        
+
+    
     def setup_ui(self):
         self.page.theme_mode = ft.ThemeMode.DARK
         self.page.bgcolor = ft.Colors.BLACK
@@ -485,7 +489,6 @@ class Downloader:
                         break
 
                     except aiohttp.ClientError:
-                        retries += 1
                         if not await self.check_connection():
                             self.mostrar_error("🔴 Sin conexión. Esperando reconexión...")
                             await self._retry_connection()
@@ -495,6 +498,7 @@ class Downloader:
                             self.connection_lost_event.clear()
                             self.status_label.value = f"📥 Descargando..."
                             self.page.update()
+                        retries = 0 
 
                 if retries >= self.max_retries:
                     self.mostrar_error(f"No se pudo completar la parte {i + 1} tras múltiples intentos.")
@@ -536,7 +540,7 @@ class Downloader:
             progress_ring.value = progress_percent
             status_text.value = f"{downloaded_mb} / {self.sizeof_fmt(total_size)} ({progress_percent * 100:.2f}%)"
             self.page.update()
-            await asyncio.sleep(0)  # 🔹 Se ejecutará una sola vez cada segundo
+            await asyncio.sleep(0.5)  # 🔹 Se ejecutará una sola vez cada segundo
         print("🛑 Progreso detenido.") 
 
     async def _retry_connection(self):
